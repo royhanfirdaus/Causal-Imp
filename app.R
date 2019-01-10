@@ -17,7 +17,7 @@ library(plotly)
 
 # Define UI for application that draws a histogram
 ui <- dashboardPage(
-  skin = "purple",
+  skin = "green",
   dashboardHeader(
     title="Causal Impact",
     tags$li(a(href = 'https://www.linkedin.com/in/royhan-firdaus-032094141/',
@@ -52,28 +52,34 @@ ui <- dashboardPage(
     tabItems(
       # Overview page
       tabItem("overview",
+              h2("Trends Plot"),
               fluidRow(
                 box(
-                  title="Trends / Interest over time", solidHeader=T,
+                  title="Trends / Interest Over Time", solidHeader=T,
                   collapsible = T,
                   width=12,
-                  plotlyOutput("popvid1", height = 300)
+                  plotOutput("trend1", height = 300)
+                ),
+                sidebarPanel(
+                  sliderInput("dates",
+                              "Pick The Dates:",
+                              min = as.Date("2016-01-01","%Y-%m-%d"),
+                              max = as.Date("2019-01-11","%Y-%m-%d"),
+                              value=c(as.Date("2018-01-01"),as.Date("2018-06-30"))
+                                      ,timeFormat="%Y-%m-%d")
                 ),
                 box(
                   title="Internal Memo",
                   solidHeader = T,
                   width=8,
                   p("Trends / Interest over time is Numbers represent search interest relative to the highest point on the chart for the given region and time. A value of 100 is the peak popularity for the term. A value of 50 means that the term is half as popular. A score of 0 means there was not enough data for this term.")
-                ),
-                box(
-                  title="Raw Data", width=4, collapsible = T, dataTableOutput("popvidtab")
                 )
+                
               )
       ),
       
       tabItem("impact",
               h2("Impact Plot"),
-              
               fluidRow(
                 box(
                   title="How Strong The Impact?", solidHeader=T,
@@ -81,54 +87,51 @@ ui <- dashboardPage(
                   width=8,
                   plotOutput("offs1", height = 500)
                 ),
-                sidebarPanel(
-                  sliderInput("bins",
-                              "Number of bins:",
-                              min = 1,
-                              max = 50,
-                              value = 30)
-                ),
                 box(
-                  title = "Summary",
-                  solidHeader = T,
-                  width=4,
+                  tabsetPanel(
+                  tabPanel("Analysis Summary", 
                   verbatimTextOutput("summ") 
                 ),
-                box(
-                  title="Analysis Report",
-                  solidHeader = T,
-                  width=12,
-                  verbatimTextOutput("rep")
-                )
+                  tabPanel("Analysis Report",
+                  textOutput("rep")
+                  )
+                ), width = 4
               )
               
               
       )
       
     )
-    
+    )
+    )
   )
   
-  
-  
-)
 
 # Define server logic required to draw a histogram
 server <- function(input, output) {
 
   ## Ouput Overview
-  data1 <- read.csv("bp.csv", stringsAsFactors = F)
-  data1$Day <- mdy(data1$Day)
-  plot1 <- ggplot(data1, aes(Day, BLACKPINK...Worldwide.)) + geom_line()+
-    xlab("Date") + ylab("BLACKPINK Trend Worldwide")
-  output$popvid1 <- renderPlotly({
-    ggplotly(plot1,originalData = F)
-  })
   
-  output$popvidtab <- renderDataTable(
-    data1, options = list(
-      pageLength = 5)
-  )
+  data1 <- read.csv("bp.csv", stringsAsFactors = F)
+  
+  
+  files <- dir('data_input/')
+  df <- read.csv(paste0('data_input/',files[1]),skip=2)
+  for(i in 2:length(files)){
+    temp <- read.csv(paste0('data_input/',files[i]), skip=2)
+    df <- rbind(df, temp)
+  }
+  df$Day <- ymd(df$Day)
+  
+  output$trend1 <- renderPlot({
+    cat(input$dates)
+    # ggplotly(plot1,originalData = F)
+    
+    plot1 <- ggplot(df, aes(Day, BLACKPINK...Worldwide.)) + geom_line()+
+      xlab("Date") + ylab("BLACKPINK Trend Worldwide") + theme_bw() +
+      scale_x_date(limits = as.Date(input$dates, origin="1970-01-01"))
+    plot1
+  })
   
   ## Ouput Analyst
   tsdat <- data1$BLACKPINK...Worldwide.
@@ -136,9 +139,11 @@ server <- function(input, output) {
   post.period <- c(165, 181)
   post.period.response <- ts1[post.period[1] : post.period[2]]
   ts1[post.period[1] : post.period[2]] <- NA
+  # 
+  # ss <- AddLocalLevel(list(), ts1)
+  # bsts.model <- bsts(ts1 ~ 1, ss, niter = 5000)
   
-  ss <- AddLocalLevel(list(), ts1)
-  bsts.model <- bsts(ts1 ~ 1, ss, niter = 5000)
+  bsts.model <- readRDS("bsts.RDS")
   
   impact1 <- CausalImpact(bsts.model = bsts.model,
                           post.period.response = post.period.response)
@@ -152,7 +157,7 @@ server <- function(input, output) {
   )
   
   output$rep <- renderPrint(
-    impact1$report
+    gsub("[\r\n]", "", impact1$report)
   )
    
    output$distPlot <- renderPlot({
